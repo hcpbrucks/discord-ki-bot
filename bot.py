@@ -36,7 +36,7 @@ def mode():
 
 @app.route("/event", methods=["POST"])
 def event():
-    global LAST_EVENT, STATUS_MESSAGE
+    global LAST_EVENT
 
     if request.headers.get("X-API-KEY") != API_KEY:
         return {"error": "unauthorized"}, 401
@@ -45,30 +45,30 @@ def event():
     image = request.files.get("image")
     LAST_EVENT = event_type
 
-    async def handle():
+    async def notify():
         global STATUS_MESSAGE
         user = await bot.fetch_user(OWNER_ID)
 
-        # Status-Nachricht aktualisieren
+        # Status aktualisieren
         if STATUS_MESSAGE:
-            embed = STATUS_MESSAGE.embeds[0]
-            embed.description = f"**Modus:** {MODE}\n**Letztes Event:** {LAST_EVENT}"
-            await STATUS_MESSAGE.edit(embed=embed)
+            embed = build_status_embed()
+            await STATUS_MESSAGE.edit(embed=embed, view=ControlView())
 
+        # NUR IM ALARM
         if MODE == "NORMAL":
             return
 
-        content = f"<@{OWNER_ID}> 🚨 **PERSON ERKANNT** ({MODE})"
+        if event_type == "PERSON_DETECTED":
+            content = f"<@{OWNER_ID}>\n🚨 **PERSON ERKANNT** ({MODE})"
+            if image:
+                file = discord.File(image.stream, filename="alert.jpg")
+                msg = await user.send(content, file=file)
+            else:
+                msg = await user.send(content)
 
-        if image:
-            file = discord.File(image.stream, filename="alert.jpg")
-            msg = await user.send(content, file=file)
-        else:
-            msg = await user.send(content)
+            ALERT_MESSAGES.append(msg)
 
-        ALERT_MESSAGES.append(msg)
-
-    bot.loop.create_task(handle())
+    bot.loop.create_task(notify())
     return {"ok": True}
 
 def run_web():
@@ -90,6 +90,14 @@ async def clear_alerts():
             pass
     ALERT_MESSAGES = []
 
+def build_status_embed():
+    color = 0x00ff99 if MODE == "NORMAL" else 0xff0000
+    return discord.Embed(
+        title="🧠 Live-Überwachung",
+        description=f"**Modus:** {MODE}\n**Letztes Event:** {LAST_EVENT}",
+        color=color
+    )
+
 # =====================
 # UI
 # =====================
@@ -106,18 +114,21 @@ class ControlView(discord.ui.View):
         MODE = "NORMAL"
         await clear_alerts()
         await interaction.response.defer()
+        await STATUS_MESSAGE.edit(embed=build_status_embed(), view=self)
 
     @discord.ui.button(label="🟡 Alarm", style=discord.ButtonStyle.primary)
     async def alarm(self, interaction, button):
         global MODE
         MODE = "ALARM"
         await interaction.response.defer()
+        await STATUS_MESSAGE.edit(embed=build_status_embed(), view=self)
 
     @discord.ui.button(label="🔴 Alarm sofort", style=discord.ButtonStyle.danger)
     async def alarm_now(self, interaction, button):
         global MODE
         MODE = "ALARM_NOW"
         await interaction.response.defer()
+        await STATUS_MESSAGE.edit(embed=build_status_embed(), view=self)
 
 # =====================
 # COMMAND
@@ -125,30 +136,18 @@ class ControlView(discord.ui.View):
 @bot.event
 async def on_ready():
     print("✅ Bot online")
-    await bot.tree.sync()
 
-@bot.tree.command(name="status", description="Live Status")
+@bot.tree.command(name="status")
 async def status(interaction: discord.Interaction):
     global STATUS_MESSAGE
 
     if interaction.user.id != OWNER_ID:
         return
 
-    embed = discord.Embed(
-        title="🧠 Live-Überwachung",
-        description=f"**Modus:** {MODE}\n**Letztes Event:** {LAST_EVENT}",
-        color=0x00ff99
-    )
-
-    STATUS_MESSAGE = await interaction.channel.send(
-        embed=embed,
-        view=ControlView()
-    )
-
-    await interaction.response.send_message(
-        "✅ Status gestartet",
-        ephemeral=True
-    )
+    embed = build_status_embed()
+    msg = await interaction.channel.send(embed=embed, view=ControlView())
+    STATUS_MESSAGE = msg
+    await interaction.response.send_message("✅ Status gestartet", ephemeral=True)
 
 # =====================
 # START
