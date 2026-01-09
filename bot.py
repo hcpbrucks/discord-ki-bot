@@ -49,32 +49,42 @@ class ControlView(discord.ui.View):
         return interaction.user.id == OWNER_ID
 
     @discord.ui.button(label="🟢 Normal", style=discord.ButtonStyle.success)
-    async def normal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        global MODE
-        MODE = "NORMAL"
-        await interaction.response.send_message("✅ Normalmodus aktiv", ephemeral=True)
+async def normal(self, interaction: discord.Interaction, button: discord.ui.Button):
+    global MODE
+    MODE = "NORMAL"
+    await notify_owner("🟢 Modus gewechselt: NORMAL")
+    await interaction.response.send_message("Normalmodus aktiv", ephemeral=True)
 
-    @discord.ui.button(label="🟡 Alarm", style=discord.ButtonStyle.primary)
-    async def alarm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        global MODE
-        MODE = "ALARM"
-        await interaction.response.send_message("⚠️ Alarmmodus aktiv", ephemeral=True)
 
-    @discord.ui.button(label="🔴 Alarm sofort", style=discord.ButtonStyle.danger)
-    async def alarm_now(self, interaction: discord.Interaction, button: discord.ui.Button):
-        global MODE
-        MODE = "ALARM_NOW"
-        await interaction.response.send_message("🚨 Alarm SOFORT", ephemeral=True)
+ @discord.ui.button(label="🟡 Alarm", style=discord.ButtonStyle.primary)
+async def alarm(self, interaction: discord.Interaction, button: discord.ui.Button):
+    global MODE
+    MODE = "ALARM"
+    await notify_owner("⚠️ Alarmmodus AKTIV")
+    await interaction.response.send_message("Alarmmodus aktiv", ephemeral=True)
 
-    @discord.ui.button(label="👁️ Gesicht prüfen", style=discord.ButtonStyle.secondary)
-    async def face(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("👁️ Gesichtserkennung angefordert", ephemeral=True)
 
-    @discord.ui.button(label="⛔ Stop", style=discord.ButtonStyle.secondary)
-    async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
-        global MODE
-        MODE = "NORMAL"
-        await interaction.response.send_message("⛔ Alarm gestoppt", ephemeral=True)
+  @discord.ui.button(label="🔴 Alarm sofort", style=discord.ButtonStyle.danger)
+async def alarm_now(self, interaction: discord.Interaction, button: discord.ui.Button):
+    global MODE
+    MODE = "ALARM_NOW"
+    await notify_owner("🚨 SOFORT-ALARM AKTIVIERT")
+    await interaction.response.send_message("Sofort-Alarm aktiv", ephemeral=True)
+
+
+   @discord.ui.button(label="👁️ Gesicht prüfen", style=discord.ButtonStyle.secondary)
+async def face(self, interaction: discord.Interaction, button: discord.ui.Button):
+    await notify_owner("👁️ Manuelle Gesichtserkennung angefordert")
+    await interaction.response.send_message("Gesichtserkennung angefordert", ephemeral=True)
+
+
+ @discord.ui.button(label="⛔ Stop", style=discord.ButtonStyle.secondary)
+async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
+    global MODE
+    MODE = "NORMAL"
+    await notify_owner("⛔ Alarm gestoppt")
+    await interaction.response.send_message("Alarm gestoppt", ephemeral=True)
+
 
     
     async def notify_owner(message: str):
