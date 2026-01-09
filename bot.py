@@ -57,6 +57,15 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
+@app.route("/mode", methods=["GET"])
+def mode():
+    if request.headers.get("X-API-KEY") != API_KEY:
+        return {"error": "unauthorized"}, 401
+
+    return {
+        "mode": MODE
+    }
+
 # =====================
 # DISCORD BOT
 # =====================
