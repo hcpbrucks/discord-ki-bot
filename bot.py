@@ -39,6 +39,7 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 MODE = "NORMAL"
+LAST_EVENT = "—"
 
 class ControlView(discord.ui.View):
     def __init__(self):
@@ -74,6 +75,12 @@ class ControlView(discord.ui.View):
         global MODE
         MODE = "NORMAL"
         await interaction.response.send_message("⛔ Alarm gestoppt", ephemeral=True)
+
+    
+    async def notify_owner(message: str):
+    user = await bot.fetch_user(OWNER_ID)
+    await user.send(message)
+
 
 @bot.event
 async def on_ready():
