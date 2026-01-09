@@ -14,18 +14,14 @@ API_KEY = os.getenv("API_KEY")
 # =====================
 # STATE
 # =====================
-MODE = "NORMAL"
+MODE = "ALARM"   # 🔴 STARTET DIREKT IM ALARM
 LAST_EVENT = "—"
-ALERT_MESSAGES = []  # gespeicherte Alarm-DMs
+ALERT_MESSAGES = []
 
 # =====================
 # FLASK API
 # =====================
 app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bot running"
 
 @app.route("/event", methods=["POST"])
 def event():
@@ -41,24 +37,18 @@ def event():
     async def notify():
         user = await bot.fetch_user(OWNER_ID)
 
-        # 🔕 NORMAL → GAR NICHTS
         if MODE == "NORMAL":
             return
 
-        if event_type == "PERSON_DETECTED":
-            content = f"🚨 **PERSON ERKANNT**\nModus: {MODE}"
+        content = f"<@{OWNER_ID}> 🚨 **PERSON ERKANNT** ({MODE})"
 
-            # Ping NUR bei Alarm
-            if MODE in ("ALARM", "ALARM_NOW"):
-                content = f"<@{OWNER_ID}>\n" + content
+        if image:
+            file = discord.File(image.stream, filename="alert.jpg")
+            msg = await user.send(content, file=file)
+        else:
+            msg = await user.send(content)
 
-            if image:
-                file = discord.File(image.stream, filename="alert.jpg")
-                msg = await user.send(content=content, file=file)
-            else:
-                msg = await user.send(content=content)
-
-            ALERT_MESSAGES.append(msg)
+        ALERT_MESSAGES.append(msg)
 
     bot.loop.create_task(notify())
     return {"ok": True}
@@ -97,40 +87,25 @@ class ControlView(discord.ui.View):
         global MODE
         MODE = "NORMAL"
         await clear_alerts()
-        await interaction.response.send_message("🟢 Modus: NORMAL", ephemeral=True)
+        await interaction.response.send_message("🟢 NORMAL", ephemeral=True)
 
     @discord.ui.button(label="🟡 Alarm", style=discord.ButtonStyle.primary)
     async def alarm(self, interaction, button):
         global MODE
         MODE = "ALARM"
-        await interaction.response.send_message("🟡 Modus: ALARM", ephemeral=True)
+        await interaction.response.send_message("🟡 ALARM", ephemeral=True)
 
     @discord.ui.button(label="🔴 Alarm sofort", style=discord.ButtonStyle.danger)
     async def alarm_now(self, interaction, button):
         global MODE
         MODE = "ALARM_NOW"
-        await interaction.response.send_message("🔴 Modus: SOFORT-ALARM", ephemeral=True)
-
-    @discord.ui.button(label="⛔ Stop", style=discord.ButtonStyle.secondary)
-    async def stop(self, interaction, button):
-        global MODE
-        MODE = "NORMAL"
-        await clear_alerts()
-        await interaction.response.send_message("⛔ Alarm gestoppt", ephemeral=True)
+        await interaction.response.send_message("🔴 SOFORT-ALARM", ephemeral=True)
 
 # =====================
-# COMMAND
+# STATUS COMMAND
 # =====================
-@bot.event
-async def on_ready():
-    print("✅ Bot online")
-    await bot.tree.sync()
-
 @bot.tree.command(name="status", description="Live Status")
 async def status(interaction: discord.Interaction):
-    if interaction.user.id != OWNER_ID:
-        return
-
     embed = discord.Embed(
         title="🧠 Live-Überwachung",
         description=f"**Modus:** {MODE}\n**Letztes Event:** {LAST_EVENT}",
@@ -140,7 +115,8 @@ async def status(interaction: discord.Interaction):
     await interaction.response.send_message(
         embed=embed,
         view=ControlView(),
-        ephemeral=True
+        ephemeral=False,
+        delete_after=300  # ⏱️ 5 Minuten
     )
 
 # =====================
