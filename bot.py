@@ -17,8 +17,12 @@ API_KEY = os.getenv("API_KEY")
 MODE = "NORMAL"
 LAST_EVENT = "—"
 
+STATUS_MESSAGE_ID = None
+STATUS_CHANNEL_ID = None
+ALARM_MESSAGES = []
+
 # =====================
-# Flask Web Server (für Render + API)
+# Flask Web Server (Render + API)
 # =====================
 app = Flask(__name__)
 
@@ -48,19 +52,16 @@ def event():
 
     LAST_EVENT = event_type
 
-    # Discord-Notification asynchron senden
     async def notify():
         if event_type == "PERSON_DETECTED":
-            await notify_owner(f"👤 Person erkannt | Modus: {MODE}")
+            await notify_owner("👤 Person erkannt")
         elif event_type == "FACE_UNKNOWN":
-            await notify_owner("🚨 UNBEKANNTES GESICHT!")
+            await notify_owner("🚨 UNBEKANNTES GESICHT")
         else:
             await notify_owner(f"ℹ️ Event: {event_type}")
 
     bot.loop.create_task(notify())
-
     return jsonify({"ok": True})
-
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
@@ -72,9 +73,52 @@ def run_web():
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-async def notify_owner(message: str):
+# =====================
+# HELPERS
+# =====================
+async def update_status_dm():
+    global STATUS_MESSAGE_ID, STATUS_CHANNEL_ID
+
     user = await bot.fetch_user(OWNER_ID)
-    await user.send(message)
+
+    embed = discord.Embed(
+        title="🛡️ Live-Überwachung",
+        color=0x00ff99
+    )
+    embed.add_field(name="🧠 Modus", value=MODE, inline=False)
+    embed.add_field(name="📡 Letztes Event", value=LAST_EVENT, inline=False)
+
+    if STATUS_MESSAGE_ID is None:
+        msg = await user.send(embed=embed, view=ControlView())
+        STATUS_MESSAGE_ID = msg.id
+        STATUS_CHANNEL_ID = msg.channel.id
+    else:
+        channel = await bot.fetch_channel(STATUS_CHANNEL_ID)
+        msg = await channel.fetch_message(STATUS_MESSAGE_ID)
+        await msg.edit(embed=embed, view=ControlView())
+
+async def send_alarm_ping(text: str):
+    user = await bot.fetch_user(OWNER_ID)
+    msg = await user.send(f"🚨 <@{OWNER_ID}> {text}")
+    ALARM_MESSAGES.append(msg)
+
+async def clear_alarms():
+    global ALARM_MESSAGES
+    for msg in ALARM_MESSAGES:
+        try:
+            await msg.delete()
+        except:
+            pass
+    ALARM_MESSAGES = []
+
+async def notify_owner(message: str):
+    global LAST_EVENT
+    LAST_EVENT = message
+
+    if MODE in ["ALARM", "ALARM_NOW"]:
+        await send_alarm_ping(message)
+
+    await update_status_dm()
 
 # =====================
 # UI VIEW
@@ -90,6 +134,7 @@ class ControlView(discord.ui.View):
     async def normal(self, interaction: discord.Interaction, button: discord.ui.Button):
         global MODE
         MODE = "NORMAL"
+        await clear_alarms()
         await notify_owner("🟢 Modus: NORMAL")
         await interaction.response.send_message("Normalmodus aktiv", ephemeral=True)
 
@@ -109,13 +154,14 @@ class ControlView(discord.ui.View):
 
     @discord.ui.button(label="👁️ Gesicht prüfen", style=discord.ButtonStyle.secondary)
     async def face(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await notify_owner("👁️ Gesichtserkennung MANUELL angefordert")
-        await interaction.response.send_message("Gesichtserkennung gestartet", ephemeral=True)
+        await notify_owner("👁️ Manuelle Gesichtserkennung")
+        await interaction.response.send_message("Gesichtserkennung angefordert", ephemeral=True)
 
     @discord.ui.button(label="⛔ Stop", style=discord.ButtonStyle.secondary)
     async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
         global MODE
         MODE = "NORMAL"
+        await clear_alarms()
         await notify_owner("⛔ Alarm gestoppt")
         await interaction.response.send_message("Alarm gestoppt", ephemeral=True)
 
@@ -126,6 +172,7 @@ class ControlView(discord.ui.View):
 async def on_ready():
     print(f"✅ Bot online als {bot.user}")
     await bot.tree.sync()
+    await update_status_dm()
 
 @bot.tree.command(name="status", description="Zeigt Status & Steuerung")
 async def status(interaction: discord.Interaction):
@@ -133,14 +180,8 @@ async def status(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Kein Zugriff", ephemeral=True)
         return
 
-    embed = discord.Embed(
-        title="🧠 KI-Überwachung",
-        description=f"**Modus:** {MODE}\n**Letztes Event:** {LAST_EVENT}",
-        color=0x00ff99
-    )
-
     await interaction.response.send_message(
-        embed=embed,
+        "📊 Live-Status geöffnet",
         view=ControlView(),
         ephemeral=True
     )
