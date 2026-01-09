@@ -36,6 +36,32 @@ def get_mode():
         "last_event": LAST_EVENT
     })
 
+@app.route("/event", methods=["POST"])
+def event():
+    global LAST_EVENT
+
+    if request.headers.get("X-API-KEY") != API_KEY:
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.json or {}
+    event_type = data.get("type", "UNKNOWN")
+
+    LAST_EVENT = event_type
+
+    # Discord-Notification asynchron senden
+    async def notify():
+        if event_type == "PERSON_DETECTED":
+            await notify_owner(f"👤 Person erkannt | Modus: {MODE}")
+        elif event_type == "FACE_UNKNOWN":
+            await notify_owner("🚨 UNBEKANNTES GESICHT!")
+        else:
+            await notify_owner(f"ℹ️ Event: {event_type}")
+
+    bot.loop.create_task(notify())
+
+    return jsonify({"ok": True})
+
+
 def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
