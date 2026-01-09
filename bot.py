@@ -2,45 +2,48 @@ import os
 import threading
 import discord
 from discord.ext import commands
-from flask import Flask, request
+from flask import Flask, request, jsonify
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID"))
 API_KEY = os.getenv("API_KEY")
 
 MODE = "NORMAL"
-STATUS_MESSAGE = None
+LAST_EVENT = "—"
 ALERT_MESSAGES = []
 
+# =====================
+# Flask API
+# =====================
 app = Flask(__name__)
 
 @app.route("/mode", methods=["GET"])
-def mode():
+def get_mode():
     if request.headers.get("X-API-KEY") != API_KEY:
-        return {"error": "unauthorized"}, 401
-    return {"mode": MODE}
+        return jsonify({"error": "unauthorized"}), 401
+    return jsonify({"mode": MODE})
 
 @app.route("/event", methods=["POST"])
 def event():
+    global LAST_EVENT
     if request.headers.get("X-API-KEY") != API_KEY:
-        return {"error": "unauthorized"}, 401
+        return jsonify({"error": "unauthorized"}), 401
 
+    LAST_EVENT = "PERSON_DETECTED"
     image = request.files.get("image")
 
     async def notify():
-        user = await bot.fetch_user(OWNER_ID)
-
-        # ❌ NIE im NORMAL alarmieren
-        if MODE == "NORMAL":
+        if MODE != "ALARM":
             return
 
-        content = f"<@{OWNER_ID}> 🚨 **Bewegung erkannt** ({MODE})"
+        channel = await bot.fetch_user(OWNER_ID)
 
+        content = f"🚨 <@{OWNER_ID}> **Bewegung erkannt!**"
         if image:
-            file = discord.File(image, filename="alert.jpg")
-            msg = await user.send(content, file=file)
+            file = discord.File(image.stream, filename="alarm.jpg")
+            msg = await channel.send(content, file=file)
         else:
-            msg = await user.send(content + "\n⚠️ (kein Bild)")
+            msg = await channel.send(content)
 
         ALERT_MESSAGES.append(msg)
 
@@ -49,58 +52,51 @@ def event():
 
 def run_web():
     port = int(os.environ.get("PORT", 10000))
-    app.run("0.0.0.0", port)
+    app.run(host="0.0.0.0", port=port)
 
 # =====================
-
+# Discord Bot
+# =====================
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 async def clear_alerts():
-    for msg in ALERT_MESSAGES:
+    for m in ALERT_MESSAGES:
         try:
-            await msg.delete()
+            await m.delete()
         except:
             pass
     ALERT_MESSAGES.clear()
 
-def status_embed():
-    return discord.Embed(
-        title="🧠 Überwachung",
-        description=f"**Modus:** {MODE}",
-        color=0xff0000 if MODE != "NORMAL" else 0x00ff99
-    )
-
 class ControlView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
     @discord.ui.button(label="🟢 Normal", style=discord.ButtonStyle.success)
     async def normal(self, interaction, button):
         global MODE
         MODE = "NORMAL"
         await clear_alerts()
-        await STATUS_MESSAGE.edit(embed=status_embed(), view=self)
-        await interaction.response.defer()
+        await interaction.response.send_message("🟢 NORMAL", ephemeral=True)
 
-    @discord.ui.button(label="🟡 Alarm", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="🚨 Alarm", style=discord.ButtonStyle.danger)
     async def alarm(self, interaction, button):
         global MODE
         MODE = "ALARM"
-        await STATUS_MESSAGE.edit(embed=status_embed(), view=self)
-        await interaction.response.defer()
+        await interaction.response.send_message("🚨 ALARM AKTIV", ephemeral=True)
 
 @bot.tree.command(name="status")
 async def status(interaction: discord.Interaction):
-    global STATUS_MESSAGE
-    if interaction.user.id != OWNER_ID:
-        return
-    STATUS_MESSAGE = await interaction.channel.send(
-        embed=status_embed(),
-        view=ControlView()
+    embed = discord.Embed(
+        title="🧠 Überwachung",
+        description=f"Modus: **{MODE}**\nLetztes Event: **{LAST_EVENT}**",
+        color=0xff0000 if MODE == "ALARM" else 0x00ff99
     )
-    await interaction.response.send_message("Status aktiv", ephemeral=True)
+    await interaction.response.send_message(embed=embed, view=ControlView())
 
 @bot.event
 async def on_ready():
-    print("Bot online")
+    print("✅ Bot online")
 
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
