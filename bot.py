@@ -18,6 +18,17 @@ def run_web():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 
+from flask import request, jsonify
+
+API_KEY = os.getenv("API_KEY")
+
+@app.route("/mode", methods=["GET"])
+def get_mode():
+    if request.headers.get("X-API-KEY") != API_KEY:
+        return jsonify({"error": "unauthorized"}), 401
+
+    return jsonify({"mode": MODE})
+
 # =====================
 # Discord Bot
 # =====================
